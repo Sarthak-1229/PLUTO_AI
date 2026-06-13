@@ -43,50 +43,71 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Keyboard automation / writing
   typeText: (text) => ipcRenderer.invoke('type-text', text),
 
-  // Ollama Vision API (with image)
-  chatOllamaVision: async (messages, model, base64Image) => {
+  // Groq Vision API (with image)
+  chatGroqVision: async (messages, model, base64Image, apiKey) => {
     try {
-      // Add image to the last user message
+      if (!apiKey) throw new Error('No Groq API key provided');
+      
+      // Build messages: system stays as-is, user message gets multimodal content
       const msgs = messages.map((m, i) => {
         if (i === messages.length - 1 && m.role === 'user') {
-          return { ...m, images: [base64Image] };
+          return { 
+            role: 'user', 
+            content: [
+              { type: 'text', text: m.content },
+              { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+            ] 
+          };
         }
         return m;
       });
-      const res = await fetch('http://localhost:11434/api/chat', {
+
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages: msgs, stream: false })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({ 
+          model, 
+          messages: msgs, 
+          max_tokens: 300,
+          temperature: 0.7
+        })
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      
       const data = await res.json();
-      return { ok: true, text: data.message.content };
+      if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+      return { ok: true, text: data.choices[0].message.content };
     } catch (err) {
+      console.error('Groq Vision error:', err.message);
       return { ok: false, error: err.message };
     }
   },
 
-  // Ollama API with 3 retries and speed optimizations
-  chatOllama: async (messages, model = 'llama3.2') => {
+  // Groq Chat API with retries
+  chatGroq: async (messages, model, apiKey) => {
+    if (!apiKey) return { ok: false, error: 'No Groq API key provided' };
+    
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const res = await fetch('http://localhost:11434/api/chat', {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
           body: JSON.stringify({
             model,
             messages,
-            stream: false,
-            options: {
-              num_predict: 120, // Keep responses short and fast
-              temperature: 0.7,
-              num_ctx: 2048     // Optimizes evaluation time
-            }
+            max_tokens: 512,
+            temperature: 0.7
           })
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
         const data = await res.json();
-        return { ok: true, text: data.message.content };
+        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+        return { ok: true, text: data.choices[0].message.content };
       } catch (err) {
         if (attempt < 2) { await new Promise(r => setTimeout(r, 1500 * (attempt + 1))); continue; }
         return { ok: false, error: err.message };

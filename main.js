@@ -235,13 +235,11 @@ ipcMain.handle('capture-screen', async () => {
   try {
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: 1920, height: 1080 } // High-res capture for readable text
+      thumbnailSize: { width: 800, height: 600 } // Reduced resolution for faster analysis
     });
     if (sources.length > 0) {
-      const dataUrl = sources[0].thumbnail.toDataURL('image/png');
-      // Extract base64 part (remove "data:image/png;base64,")
-      const base64 = dataUrl.split(',')[1];
-      return { ok: true, base64 };
+      const dataUrl = sources[0].thumbnail.toJPEG(60).toString('base64');
+      return { ok: true, base64: dataUrl };
     }
     return { ok: false, error: 'No screen sources found' };
   } catch (err) {
@@ -254,11 +252,14 @@ ipcMain.handle('capture-screen', async () => {
 ipcMain.handle('search-duckduckgo', async (_event, query) => {
   return new Promise((resolve) => {
     const https = require('https');
-    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-
-    const req = https.get(url, {
+    const data = `q=${encodeURIComponent(query)}`;
+    
+    const req = https.request('https://lite.duckduckgo.com/lite/', {
+      method: 'POST',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': data.length
       }
     }, (res) => {
       let html = '';
@@ -266,15 +267,15 @@ ipcMain.handle('search-duckduckgo', async (_event, query) => {
       res.on('end', () => {
         try {
           const results = [];
+          const snippetRegex = /<td class='result-snippet'>([\s\S]*?)<\/td>/g;
+          const titleRegex = /<a rel="nofollow" href="[^"]*" class='result-link'>([\s\S]*?)<\/a>/g;
+          
           const snippets = [];
-          const snippetRegex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+          const titles = [];
           let match;
           while ((match = snippetRegex.exec(html)) !== null) {
             snippets.push(match[1].replace(/<[^>]*>/g, '').trim());
           }
-
-          const titles = [];
-          const titleRegex = /<a class="result__url"[^>]*>([\s\S]*?)<\/a>/g;
           while ((match = titleRegex.exec(html)) !== null) {
             titles.push(match[1].replace(/<[^>]*>/g, '').trim());
           }
@@ -293,6 +294,9 @@ ipcMain.handle('search-duckduckgo', async (_event, query) => {
     req.on('error', (err) => {
       resolve({ ok: false, error: err.message });
     });
+    
+    req.write(data);
+    req.end();
   });
 });
 

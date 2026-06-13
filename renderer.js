@@ -10,14 +10,15 @@ const $ = id => document.getElementById(id);
 let hunger = 7, happiness = 8, energy = 6;
 let isSleeping = false, isDragging = false;
 let isListening = false, isSpeaking = false, isThinking = false;
-let voiceEnabled = true, volume = 0.9, ollamaModel = 'llama3.2', visionModel = 'llama3.2-vision';
+let voiceEnabled = true, volume = 0.9;
+let groqKey = '';
 let elevenLabsKey = '', elevenLabsVoice = '21m00Tcm4TlvDq8ikWAM';
 let chatHistory = [];
 let statusTimer = null;
 let shouldKeepListening = false;
 let currentAudio = null;
 
-const SYS_PROMPT = `You are Pluto, a sleek, cute desktop AI assistant like Jarvis. Be smart, conversational, and helpful. Call the user 'buddy'. Talk directly and naturally, like a voice assistant (ChatGPT Live/Gemini Live). DO NOT use headers, bullet points, asterisks for actions, or emoji icons. Your answers MUST be extremely short and precise (1 sentence, maximum 20 words). Speak directly to what is asked without any fluff.`;
+const SYS_PROMPT = `You are Pluto, a sleek, cute desktop AI assistant like Jarvis. Be smart, conversational, and helpful. Call the user 'buddy'. Talk directly and naturally, like a voice assistant (ChatGPT Live/Gemini Live). DO NOT use headers, bullet points, asterisks for actions, or emoji icons. Your answers MUST be extremely short and precise (1 sentence, maximum 20 words). Speak directly to what is asked without any fluff. NEVER say you are an AI or have a knowledge cutoff; you have live internet access and know everything happening right now.`;
 
 // ── DOM ──────────────────────────────────────────────────────────────────
 const petZone   = $('pet-zone');
@@ -50,8 +51,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const s = await api.loadSettings();
   if (s.elevenLabsKey) { elevenLabsKey = s.elevenLabsKey; $('opt-el-key').value = s.elevenLabsKey; }
   if (s.elevenLabsVoice) { elevenLabsVoice = s.elevenLabsVoice; $('opt-el-voice').value = s.elevenLabsVoice; }
-  if (s.ollamaModel) { ollamaModel = s.ollamaModel; $('opt-model').value = s.ollamaModel; }
-  if (s.visionModel) { visionModel = s.visionModel; $('opt-vision-model').value = s.visionModel; }
+  if (s.groqKey) { groqKey = s.groqKey; $('opt-groq-key').value = s.groqKey; }
   if (s.voiceEnabled !== undefined) { voiceEnabled = s.voiceEnabled; $('opt-voice').checked = s.voiceEnabled; }
   if (s.volume !== undefined) { volume = s.volume; $('opt-vol').value = Math.round(s.volume * 100); }
 
@@ -246,8 +246,7 @@ function savePlutoSettings() {
   api.saveSettings({
     elevenLabsKey,
     elevenLabsVoice,
-    ollamaModel,
-    visionModel,
+    groqKey,
     voiceEnabled,
     volume
   });
@@ -285,15 +284,9 @@ $('opt-el-voice').onchange = function() {
   savePlutoSettings();
 };
 
-$('opt-model').onchange = function() {
-  ollamaModel = this.value;
-  showMsg(`Pluto's brain switched to ${ollamaModel}! 🧠`);
-  savePlutoSettings();
-};
-
-$('opt-vision-model').onchange = function() {
-  visionModel = this.value;
-  showMsg(`Pluto's eyes switched to ${visionModel}! 👀`);
+$('opt-groq-key').onchange = function() {
+  groqKey = this.value.trim();
+  showMsg("Groq API Key saved! Pluto's brain is supercharged! 🧠⚡");
   savePlutoSettings();
 };
 $('opt-clear').onclick = async () => {
@@ -336,8 +329,10 @@ let silenceTimer = null;
 let analyserCtx = null;
 let analyser = null;
 let silenceStart = 0;
+let speechDetected = false;
 const SILENCE_THRESHOLD = 0.01;
 const SILENCE_DURATION = 1500; // 1.5 seconds of silence = end of speech (faster!)
+
 
 
 async function startVoice() {
@@ -405,6 +400,12 @@ async function startRecording() {
       const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
       audioChunks = [];
 
+      if (!speechDetected) {
+        // Restart silently if no speech was detected (prevents hallucination loops)
+        if (shouldKeepListening) setTimeout(() => startRecording(), 100);
+        return;
+      }
+
       if (audioBlob.size < 1000) {
         showStatus("🎙️ Too short — say more, buddy!", 'st-listen');
         if (shouldKeepListening) setTimeout(() => startRecording(), 500);
@@ -422,6 +423,7 @@ async function startRecording() {
     viDot.className = 'vi-listen';
     showStatus('🎙️ Listening...', 'st-listen');
     silenceStart = 0;
+    speechDetected = false;
 
     // Start silence detection loop
     detectSilence();
@@ -446,20 +448,31 @@ function detectSilence() {
   for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
   const rms = Math.sqrt(sum / data.length);
 
-  if (rms < SILENCE_THRESHOLD) {
+  if (rms > SILENCE_THRESHOLD) {
+    speechDetected = true;
+    silenceStart = 0; // Reset on speech
+  } else {
     if (silenceStart === 0) silenceStart = Date.now();
     else if (Date.now() - silenceStart > SILENCE_DURATION) {
-      // Silence detected — stop recording and transcribe
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        showStatus('🎙️ Processing...', 'st-think');
-        mediaRecorder.stop();
-        isListening = false;
-        petZone.classList.remove('is-listening');
+      if (speechDetected) {
+        // Silence detected after speech — stop recording and transcribe
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          showStatus('🎙️ Processing...', 'st-think');
+          mediaRecorder.stop();
+          isListening = false;
+          petZone.classList.remove('is-listening');
+        }
+        return;
+      } else if (Date.now() - silenceStart > 10000) {
+        // 10 seconds of silence without any speech -> abort and restart to prevent OOM
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+          isListening = false;
+          petZone.classList.remove('is-listening');
+        }
+        return;
       }
-      return;
     }
-  } else {
-    silenceStart = 0; // Reset on speech
   }
 
   requestAnimationFrame(detectSilence);
@@ -492,7 +505,10 @@ async function transcribeRecording(audioBlob) {
     const text = result.text.trim();
     console.log('Transcribed:', text);
 
-    if (!text || text.length < 2) {
+    const lower = text.toLowerCase().replace(/[^a-z\s]/g, '').trim();
+    const hallucinations = ['thank you', 'thanks for watching', 'thank you for watching', 'please subscribe', 'subscribe', 'you', 'amem', 'amen', 'bye', 'the end'];
+
+    if (!text || text.length < 2 || hallucinations.includes(lower)) {
       showStatus("🎙️ Pluto didn't catch that — try again!", 'st-listen');
       if (shouldKeepListening) setTimeout(() => startRecording(), 500);
       return;
@@ -583,9 +599,9 @@ async function processInput(text) {
   const t = text.toLowerCase();
   let result;
 
-  // ── Command detection ──────────────────────────────────────────────
+  // ── Hard-wired commands (these bypass the LLM router) ────────────────
   // TYPE / WRITE command
-  if (t.match(/\b(type|write|insert|keyboard)\b/)) {
+  if (t.match(/\b(type|insert|keyboard)\b/) && t.match(/\b(into|in my|on my|field|document|window)\b/)) {
     showStatus('✍️ Pluto is typing...', 'st-think');
     showMsgTyping("Pluto is typing into your active window... ⌨️");
     result = await handleTypeCommand(text);
@@ -597,32 +613,13 @@ async function processInput(text) {
     result = await handleReadFileCommand(text);
   }
   // SCREEN LOOK command
-  else if (t.match(/\b(look at|see|screen|what's on|what do you see|read my|check my|look at my|show me what|what am i doing)\b/)) {
+  else if (t.match(/\b(look at|screen|what's on|what do you see|read my|check my|look at my|show me what|what am i doing)\b/)) {
     showStatus('👁️ Scanning your screen...', 'st-think');
     showMsgTyping('Analyzing screen... 👁️');
     result = await lookAtScreen(text);
   }
-  else if (t.match(/\b(solve|calculate|compute|math)\b/) || t.match(/\d+\s*[+\-*/^]\s*\d+/)) {
-    showStatus('💭 Pluto is solving...', 'st-think');
-    showMsgTyping("Pluto is crunching the numbers... 🧮");
-    result = await solveMath(text);
-  }
-  else if (t.match(/\b(explain|what is|what are|define|meaning of|tell me about)\b/)) {
-    showStatus('💭 Pluto is explaining...', 'st-think');
-    showMsgTyping("Pluto is researching this for you... 📚");
-    result = await explainConcept(text);
-  }
-  else if (t.match(/\b(code|debug|programming|function|javascript|python|html|css|program|script)\b/)) {
-    showStatus('💭 Pluto is coding...', 'st-think');
-    showMsgTyping("Pluto is debugging... 💻");
-    result = await helpWithCode(text);
-  }
-  else if (t.match(/\b(essay|write about|write an|composition|paragraph)\b/)) {
-    showStatus('💭 Pluto is outlining...', 'st-think');
-    showMsgTyping("Pluto is drafting an outline... ✍️");
-    result = await essayOutline(text);
-  }
-  else if (t.match(/\b(study tips?|how to study|study plan|revision|review)\b/)) {
+  // STUDY TIPS (static, no API call needed)
+  else if (t.match(/\b(study tips?|how to study|study plan|revision tips?)\b/)) {
     const subj = text.replace(/\b(study tips?|how to study|study plan|give me|for|revision tips?|review)\b/gi, '').trim() || 'general';
     result = getStudyTips(subj);
     isThinking = false; viDot.className = '';
@@ -633,16 +630,58 @@ async function processInput(text) {
     else resumeListening();
     return;
   }
-  else if (t.match(/\b(search|google|look up|find)\b/)) {
-    showStatus('💭 Pluto is searching...', 'st-think');
-    showMsgTyping("Pluto is searching the cyber web... 🔍");
-    result = await searchWeb(text);
-  }
+  // ── Smart 3-way LLM Router ───────────────────────────────────────────
+  // For everything else, use the fast 8b model to classify the query
   else {
-    // Normal chat
-    showStatus('💭 Pluto is thinking...', 'st-think');
+    showStatus('💭 Pluto is analyzing query...', 'st-think');
     showMsgTyping("Pluto is thinking... 💭");
-    result = await normalChat(text);
+
+    const routerPrompt = `Classify this user message into exactly one category. Output ONLY the category word, nothing else.
+
+Categories:
+- SEARCH: Questions about current events, news, weather, stock prices, sports scores, real-time data, recent happenings, specific facts, people, places, dates, or anything that needs up-to-date information.
+- CODE: Programming, debugging, code help, math problems, calculations, algorithms, technical explanations, essay writing, or any complex analytical task.
+- CHAT: Greetings, casual conversation, jokes, personal questions, opinions, emotional support, or general chit-chat.
+
+User message: "${text}"
+
+Output ONLY one word: SEARCH, CODE, or CHAT.`;
+
+    const msgs = [
+      { role: 'system', content: 'You are a strict classifier. Output exactly one word: SEARCH, CODE, or CHAT.' },
+      { role: 'user', content: routerPrompt }
+    ];
+    
+    let route = 'CHAT'; // default fallback
+    try {
+      const routerRes = await api.chatGroq(msgs, 'llama-3.1-8b-instant', groqKey);
+      if (routerRes && routerRes.ok) {
+        const decision = routerRes.text.trim().toUpperCase();
+        if (decision.includes('SEARCH')) route = 'SEARCH';
+        else if (decision.includes('CODE')) route = 'CODE';
+        else route = 'CHAT';
+      }
+    } catch (e) {
+      console.error('Router failed, defaulting to CHAT:', e);
+    }
+
+    console.log(`[Router] "${text}" → ${route}`);
+
+    if (route === 'SEARCH') {
+      showStatus('🔍 Pluto is searching the web...', 'st-think');
+      showMsgTyping(`Pluto is searching the live web... 🔍`);
+      result = await searchWeb(text);
+    } else if (route === 'CODE') {
+      showStatus('💻 Pluto is analyzing...', 'st-think');
+      showMsgTyping("Pluto is working on it... 🧠");
+      result = await callGroq(
+        `You are Pluto, a brilliant coding and study assistant. Answer the user's question directly and precisely. Keep your response under 3 sentences. Be conversational and call the user 'buddy'.`,
+        text,
+        'meta-llama/llama-4-scout-17b-16e-instruct'
+      );
+    } else {
+      result = await normalChat(text);
+    }
   }
 
   isThinking = false;
@@ -659,7 +698,7 @@ async function processInput(text) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS (Ollama-backed)
+// HELPER FUNCTIONS (Groq-backed)
 // ═══════════════════════════════════════════════════════════════════════════
 async function solveMath(problem) {
   try {
@@ -669,38 +708,42 @@ async function solveMath(problem) {
         { role: 'system', content: 'You are Pluto. The user needs help solving a math problem. A screenshot of their screen is provided, which contains the problem. Solve it and state the final answer clearly and directly in one short sentence (under 15 words). Do not use markdown headers, asterisks, or extra commentary.' },
         { role: 'user', content: `Solve this math problem: ${problem}` }
       ];
-      const r = await api.chatOllamaVision(msgs, visionModel, capture.base64);
+      const r = await api.chatGroqVision(msgs, 'meta-llama/llama-4-scout-17b-16e-instruct', capture.base64, groqKey);
       if (r.ok) return r.text.trim();
     }
   } catch (e) { console.log("Vision math failed, falling back to text", e); }
 
-  const r = await callOllama(
+  const r = await callGroq(
     `Solve this math problem. State the final answer clearly and directly in one short sentence (under 15 words). Problem: ${problem}`,
-    problem
+    problem,
+    'meta-llama/llama-4-scout-17b-16e-instruct'
   );
   return r;
 }
 
 async function explainConcept(topic) {
-  const r = await callOllama(
+  const r = await callGroq(
     `Explain this concept in one short sentence (under 20 words). Topic: ${topic}`,
-    topic
+    topic,
+    'meta-llama/llama-4-scout-17b-16e-instruct'
   );
   return r;
 }
 
 async function helpWithCode(codeProblem) {
-  const r = await callOllama(
+  const r = await callGroq(
     `Explain how to fix this code bug in one short sentence (under 20 words). Problem: ${codeProblem}`,
-    codeProblem
+    codeProblem,
+    'meta-llama/llama-4-scout-17b-16e-instruct'
   );
   return r;
 }
 
 async function essayOutline(topic) {
-  const r = await callOllama(
+  const r = await callGroq(
     `Give a 3-bullet point outline for this topic. Keep each bullet under 5 words. Topic: ${topic}`,
-    topic
+    topic,
+    'meta-llama/llama-4-scout-17b-16e-instruct'
   );
   return r;
 }
@@ -717,9 +760,10 @@ async function handleTypeCommand(userQuery) {
     // Generate text via LLM
     const cleanedPrompt = userQuery.replace(/\b(type|write|insert|keyboard|for me|on my screen)\b/gi, '').trim();
     showMsgTyping("Pluto is drafting the text... ✍️");
-    const generated = await callOllama(
+    const generated = await callGroq(
       `You are writing text that will be typed directly into the user's active document or text field. Generate the text based on this request: "${cleanedPrompt}". Do not include any headers, descriptions, quotes, or conversational phrases. ONLY write the exact text to type.`,
-      cleanedPrompt
+      cleanedPrompt,
+      'meta-llama/llama-4-scout-17b-16e-instruct'
     );
     if (generated) textToType = generated.trim();
   }
@@ -765,11 +809,12 @@ async function handleReadFileCommand(userQuery) {
   const cleanedPrompt = userQuery.replace(pathMatch[0], '').trim();
   const instruction = cleanedPrompt || "Summarize the key contents of this file.";
 
-  const r = await callOllama(
+  const r = await callGroq(
     `You are analyzing a local file's content. Read it carefully and answer the user's instruction: "${instruction}".\n` +
     `File Contents:\n${fileRes.content}\n\n` +
     `Keep your response short, direct, and conversational (max 2 sentences, under 30 words).`,
-    filePath
+    filePath,
+    'meta-llama/llama-4-scout-17b-16e-instruct'
   );
 
   return r;
@@ -790,30 +835,46 @@ function getStudyTips(subject) {
 }
 
 async function searchWeb(query) {
-  const cleaned = query.replace(/\b(search|google|look up|find|for|me|please)\b/gi, '').trim();
-  showMsgTyping(`Pluto is searching the live web for "${cleaned}"... 🔍`);
+  // Use the full query for search — don't strip critical words
+  const searchQuery = query.replace(/\b(search|google|look up|find|for me|please|hey pluto|pluto)\b/gi, '').trim() || query;
+  showMsgTyping(`Pluto is searching the live web for "${searchQuery}"... 🔍`);
 
   try {
-    const searchRes = await api.searchDuckDuckGo(cleaned);
+    const searchRes = await api.searchDuckDuckGo(searchQuery);
     if (searchRes.ok && searchRes.results.length > 0) {
-      const context = `The user wants real-time search results for: "${cleaned}".\n` +
-        `Here are the top results from the live web:\n` +
-        searchRes.results.map((r, i) => `${i+1}. ${r.title}\n   Snippet: ${r.snippet}`).join('\n') +
-        `\n\nUsing these results, answer the user's query conversationally and directly. Keep it short (1-3 sentences) and strictly factual. Do not repeat the search results verbatim.`;
+      const webData = searchRes.results.map((r, i) => `${i+1}. ${r.title}\n   ${r.snippet}`).join('\n');
+      
+      const systemPrompt = `You are Pluto, a smart AI assistant with live internet access. The user asked: "${query}"
+
+Here are LIVE web search results from right now:
+${webData}
+
+INSTRUCTIONS:
+- Answer the user's question using ONLY the search results above.
+- Be direct, factual, and conversational. Call the user 'buddy'.
+- Keep it short (1-3 sentences, under 50 words).
+- NEVER say you don't have access to real-time data. You DO.`;
         
-      const r = await callOllama(context, cleaned);
-      if (r) return r;
+      const msgs = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: query }
+      ];
+      const r = await api.chatGroq(msgs, 'openai/gpt-oss-120b', groqKey);
+      if (r.ok) return r.text.trim();
     }
   } catch (err) {
     console.error('DuckDuckGo search error:', err);
   }
 
-  // Fallback to local Ollama knowledge if search fails or has no results
-  const r = await callOllama(
-    `The user wants to search for information about: "${cleaned}". Summarize what you know conversationally. Keep it under 80 words.`,
-    cleaned
-  );
-  return r;
+  // Fallback if search fails
+  const msgsFallback = [
+    { role: 'system', content: `You are Pluto. The user asked: "${query}". The web search failed. Answer with what you know, but keep it short (under 50 words). Be honest if you're unsure. Call the user 'buddy'.` },
+    { role: 'user', content: query }
+  ];
+  const rFallback = await api.chatGroq(msgsFallback, 'openai/gpt-oss-120b', groqKey);
+  if (rFallback.ok) return rFallback.text.trim();
+  showGroqError();
+  return null;
 }
 
 async function normalChat(text) {
@@ -822,32 +883,32 @@ async function normalChat(text) {
     { role: 'system', content: SYS_PROMPT + `\n\nCurrent stats: Hunger=${~~hunger}/10, Happiness=${~~happiness}/10, Energy=${~~energy}/10. ${mood} Keep this response to exactly 1 short sentence (under 20 words).` },
     ...chatHistory.slice(-10)
   ];
-  const r = await api.chatOllama(msgs, ollamaModel);
+  const r = await api.chatGroq(msgs, 'llama-3.1-8b-instant', groqKey);
   if (r.ok) return r.text.trim();
-  showOllamaError();
+  showGroqError();
   return null;
 }
 
-async function callOllama(systemPrompt, userContent) {
+async function callGroq(systemPrompt, userContent, model = 'llama-3.1-8b-instant') {
   const msgs = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userContent }
   ];
-  const r = await api.chatOllama(msgs, ollamaModel);
+  const r = await api.chatGroq(msgs, model, groqKey);
   if (r.ok) return r.text.trim();
-  showOllamaError();
+  showGroqError();
   return null;
 }
 
-function showOllamaError() {
+function showGroqError() {
   isThinking = false; viDot.className = '';
   const errs = [
-    "Pluto needs Ollama! Start it first (ollama serve) 🔌",
-    "Can't reach Pluto's brain! Is Ollama running, buddy? 🧠",
-    "Ollama is offline! Run: ollama run llama3.2 💤",
+    "Pluto's brain is confused! Check your Groq API key! 🔑",
+    "API Error! Please open settings and add your Groq key. 🧠",
+    "Connection to Groq failed! Are we online? 🌐",
   ];
   showMsg(`❌ ${errs[~~(Math.random()*errs.length)]}`);
-  showStatus('❌ Ollama offline!', 'st-error');
+  showStatus('❌ API Error!', 'st-error');
   setTimeout(hideStatus, 4000);
   resumeListening();
 }
@@ -1037,12 +1098,13 @@ async function lookAtScreen(userQuery) {
       { role: 'user', content: query }
     ];
 
-    const r = await api.chatOllamaVision(msgs, visionModel, capture.base64);
+    const r = await api.chatGroqVision(msgs, 'meta-llama/llama-4-scout-17b-16e-instruct', capture.base64, groqKey);
     if (r.ok) {
       return r.text.trim();
     }
 
-    return `❌ Pluto needs a vision model to see your screen!\n\nRun in terminal:\n  ollama pull llava\n\nThen I can see your screen, buddy!`;
+    console.error('Vision API failed:', r.error);
+    return `❌ Screen analysis failed: ${r.error}`;
   } catch (err) {
     return `❌ Screen analysis failed: ${err.message}`;
   }
@@ -1120,7 +1182,8 @@ function showMsg(text) {
   msgLabel.innerHTML = '🤖 Pluto';
   msgText.textContent = text;
   msgArea.classList.add('visible');
-  msgArea.scrollTop = msgArea.scrollHeight;
+  // Scroll to bottom for long messages
+  setTimeout(() => { msgArea.scrollTop = msgArea.scrollHeight; }, 50);
 }
 
 function showMsgTyping(text) {
@@ -1176,11 +1239,10 @@ function decayStats() {
   updateStats(); updateAnim();
 
   if (energy < 3 && !isSleeping)
-    showMsg("Pluto is running low on energy... so sleepy, buddy... 😴");
+    { showStatus("😴 Pluto is low on energy...", 'st-think'); setTimeout(hideStatus, 4000); }
   else if (hunger < 3)
-    showMsg(["Pluto wants snacks! Feed me, buddy! 🍕","Pluto's hungry but still wanna chat! 😋","Fuel cells critical! Cyber chips please! ⚡"][~~(Math.random()*3)]);
+    { showStatus("🍕 Pluto is hungry!", 'st-think'); setTimeout(hideStatus, 4000); }
   else if (happiness > 8) {
-    showMsg("Pluto is zooming! So happy, friend! 🚀");
     playJump();
   }
 }
@@ -1201,6 +1263,7 @@ function randomChatter() {
     'Pluto is here. Always watching, always ready. 👁️',
   ];
   const line = lines[~~(Math.random()*lines.length)];
+  // Only show in the tiny status bubble, NOT the big message area
   showStatus(`🤖 ${line}`, 'st-listen');
   setTimeout(hideStatus, 4000);
 }

@@ -42,7 +42,7 @@
   <!-- Message bubble -->
   <div id="msg-area" class="interactive">
     <div id="msg-label">🤖 Pluto</div>
-    <div id="msg-text">Systems online. Pluto is ready to assist, buddy! 🛸 Double-click me to voice chat, or right-click for options!</div>
+    <div id="msg-text"></div>
   </div>
 
   <!-- Context menu -->
@@ -84,23 +84,8 @@
       </select>
     </div>
     <div class="set-row">
-      <div class="set-label"><span>Ollama Model</span><span class="set-sub">Local LLM brain</span></div>
-      <select id="opt-model" class="set-select">
-        <option value="llama3.2">llama3.2</option>
-        <option value="phi3.5">phi3.5</option>
-        <option value="mistral">mistral</option>
-        <option value="gemma2">gemma2</option>
-      </select>
-    </div>
-    <div class="set-row">
-      <div class="set-label"><span>Vision Model</span><span class="set-sub">For screen reading</span></div>
-      <select id="opt-vision-model" class="set-select">
-      <option value="llama3.2-vision">llama3.2-vision</option>
-      <option value="llava">llava</option>
-      <option value="llava-llama3">llava-llama3</option>
-      <option value="moondream">moondream</option>
-      <option value="bakllava">bakllava</option>
-    </select>
+      <div class="set-label"><span>Groq API Key</span><span class="set-sub">Required for Pluto's brain</span></div>
+      <input type="password" id="opt-groq-key" class="chat-in" placeholder="gsk_..." style="width:160px;font-size:11px;">
     </div>
     <div class="set-row">
       <div class="set-label"><span>Clear History</span><span class="set-sub">Erase chat memory</span></div>
