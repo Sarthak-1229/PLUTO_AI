@@ -10,7 +10,7 @@ const $ = id => document.getElementById(id);
 let hunger = 7, happiness = 8, energy = 6;
 let isSleeping = false, isDragging = false;
 let isListening = false, isSpeaking = false, isThinking = false;
-let voiceEnabled = true, volume = 0.9, ollamaModel = 'llama3.2', visionModel = 'llava';
+let voiceEnabled = true, volume = 0.9, ollamaModel = 'llama3.2', visionModel = 'llama3.2-vision';
 let elevenLabsKey = '', elevenLabsVoice = '21m00Tcm4TlvDq8ikWAM';
 let chatHistory = [];
 let statusTimer = null;
@@ -662,6 +662,18 @@ async function processInput(text) {
 // HELPER FUNCTIONS (Ollama-backed)
 // ═══════════════════════════════════════════════════════════════════════════
 async function solveMath(problem) {
+  try {
+    const capture = await api.captureScreen();
+    if (capture.ok && capture.base64) {
+      const msgs = [
+        { role: 'system', content: 'You are Pluto. The user needs help solving a math problem. A screenshot of their screen is provided, which contains the problem. Solve it and state the final answer clearly and directly in one short sentence (under 15 words). Do not use markdown headers, asterisks, or extra commentary.' },
+        { role: 'user', content: `Solve this math problem: ${problem}` }
+      ];
+      const r = await api.chatOllamaVision(msgs, visionModel, capture.base64);
+      if (r.ok) return r.text.trim();
+    }
+  } catch (e) { console.log("Vision math failed, falling back to text", e); }
+
   const r = await callOllama(
     `Solve this math problem. State the final answer clearly and directly in one short sentence (under 15 words). Problem: ${problem}`,
     problem
