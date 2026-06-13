@@ -14,11 +14,20 @@ let voiceEnabled = true, volume = 0.9;
 let groqKey = '';
 let elevenLabsKey = '', elevenLabsVoice = '21m00Tcm4TlvDq8ikWAM';
 let chatHistory = [];
+let memoryBank = [];
 let statusTimer = null;
 let shouldKeepListening = false;
 let currentAudio = null;
 
-const SYS_PROMPT = `You are Pluto, a sleek, cute desktop AI assistant like Jarvis. Be smart, conversational, and helpful. Call the user 'buddy'. Talk directly and naturally, like a voice assistant (ChatGPT Live/Gemini Live). DO NOT use headers, bullet points, asterisks for actions, or emoji icons. Your answers MUST be extremely short and precise (1 sentence, maximum 20 words). Speak directly to what is asked without any fluff. NEVER say you are an AI or have a knowledge cutoff; you have live internet access and know everything happening right now.`;
+const BASE_PROMPT = `You are Pluto, a sleek, cute desktop AI assistant like Jarvis. Be smart, conversational, and helpful. Call the user 'buddy'. Talk directly and naturally, like a voice assistant (ChatGPT Live/Gemini Live). DO NOT use headers, bullet points, asterisks for actions, or emoji icons. Your answers MUST be extremely short and precise (1 sentence, maximum 20 words). Speak directly to what is asked without any fluff. NEVER say you are an AI or have a knowledge cutoff; you have live internet access and know everything happening right now.`;
+
+function getSysPrompt() {
+  let prompt = BASE_PROMPT;
+  if (memoryBank.length > 0) {
+    prompt += `\n\nLONG-TERM MEMORY (Facts you know about the user):\n- ` + memoryBank.join('\n- ');
+  }
+  return prompt;
+}
 
 // ── DOM ──────────────────────────────────────────────────────────────────
 const petZone   = $('pet-zone');
@@ -46,6 +55,9 @@ document.querySelectorAll('.interactive').forEach(el => {
 window.addEventListener('DOMContentLoaded', async () => {
   const saved = await api.loadHistory();
   if (saved && saved.length) chatHistory = saved;
+
+  const savedMemory = await api.loadMemory();
+  if (savedMemory && savedMemory.length) memoryBank = savedMemory;
 
   // Load saved settings
   const s = await api.loadSettings();
@@ -592,6 +604,9 @@ async function processInput(text) {
   if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
   api.saveHistory(chatHistory);
 
+  // Background memory extraction
+  extractAndSaveMemory(text);
+
   isThinking = true;
   viDot.className = 'vi-think';
   playBeep();
@@ -675,7 +690,7 @@ Output ONLY one word: SEARCH, CODE, or CHAT.`;
       showStatus('💻 Pluto is analyzing...', 'st-think');
       showMsgTyping("Pluto is working on it... 🧠");
       result = await callGroq(
-        `You are Pluto, a brilliant coding and study assistant. Answer the user's question directly and precisely. Keep your response under 3 sentences. Be conversational and call the user 'buddy'.`,
+        `You are Pluto, a brilliant coding and study assistant. Answer the user's question directly and precisely. Keep your response under 3 sentences. Be conversational and call the user 'buddy'.\n\nLONG-TERM MEMORY:\n${memoryBank.length ? '- ' + memoryBank.join('\n- ') : 'None'}`,
         text,
         'meta-llama/llama-4-scout-17b-16e-instruct'
       );
@@ -853,7 +868,10 @@ INSTRUCTIONS:
 - Answer the user's question using ONLY the search results above.
 - Be direct, factual, and conversational. Call the user 'buddy'.
 - Keep it short (1-3 sentences, under 50 words).
-- NEVER say you don't have access to real-time data. You DO.`;
+- NEVER say you don't have access to real-time data. You DO.
+
+LONG-TERM MEMORY:
+${memoryBank.length ? '- ' + memoryBank.join('\n- ') : 'None'}`;
         
       const msgs = [
         { role: 'system', content: systemPrompt },
@@ -868,7 +886,7 @@ INSTRUCTIONS:
 
   // Fallback if search fails
   const msgsFallback = [
-    { role: 'system', content: `You are Pluto. The user asked: "${query}". The web search failed. Answer with what you know, but keep it short (under 50 words). Be honest if you're unsure. Call the user 'buddy'.` },
+    { role: 'system', content: `You are Pluto. The user asked: "${query}". The web search failed. Answer with what you know, but keep it short (under 50 words). Be honest if you're unsure. Call the user 'buddy'.\n\nMEMORY:\n${memoryBank.join('\n')}` },
     { role: 'user', content: query }
   ];
   const rFallback = await api.chatGroq(msgsFallback, 'openai/gpt-oss-120b', groqKey);
@@ -1264,6 +1282,42 @@ function randomChatter() {
   ];
   const line = lines[~~(Math.random()*lines.length)];
   // Only show in the tiny status bubble, NOT the big message area
-  showStatus(`🤖 ${line}`, 'st-listen');
+  showStatus(`💬 ${line}`, 'st-listen');
   setTimeout(hideStatus, 4000);
+}
+
+// ── MEMORY EXTRACTION ───────────────────────────────────────────────────
+async function extractAndSaveMemory(text) {
+  if (!groqKey) return;
+  const sys = `Extract new, permanent facts about the user from this message (e.g., name, age, job, location, preferences, likes/dislikes). 
+Ignore temporary states (e.g., "I'm tired today"). 
+If there are no new facts, output ONLY the word "NONE". 
+If there are facts, output them as a short bulleted list. Keep them concise.`;
+  
+  try {
+    const msgs = [
+      { role: 'system', content: sys },
+      { role: 'user', content: text }
+    ];
+    const r = await api.chatGroq(msgs, 'llama-3.1-8b-instant', groqKey);
+    if (r && r.ok && r.text) {
+      const out = r.text.trim();
+      if (out && out.toUpperCase() !== 'NONE' && !out.includes('NONE')) {
+        const lines = out.split('\n').map(l => l.replace(/^[-*•]\s*/, '').trim()).filter(l => l.length > 0);
+        let updated = false;
+        lines.forEach(fact => {
+           if (!memoryBank.includes(fact)) {
+             memoryBank.push(fact);
+             updated = true;
+           }
+        });
+        if (updated) {
+          api.saveMemory(memoryBank);
+          console.log("Memory updated: ", memoryBank);
+        }
+      }
+    }
+  } catch(e) {
+    console.error("Memory extraction error", e);
+  }
 }

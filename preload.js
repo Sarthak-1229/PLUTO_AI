@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadHistory: () => ipcRenderer.invoke('load-history'),
   saveHistory: (h) => ipcRenderer.invoke('save-history', h),
   clearHistory: () => ipcRenderer.invoke('clear-history'),
+  loadMemory: () => ipcRenderer.invoke('load-memory'),
+  saveMemory: (m) => ipcRenderer.invoke('save-memory', m),
 
   // Settings persistence
   loadSettings: () => ipcRenderer.invoke('load-settings'),

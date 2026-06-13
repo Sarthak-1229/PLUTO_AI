@@ -8,6 +8,7 @@ app.disableHardwareAcceleration();
 let mainWindow;
 const HISTORY_PATH = path.join(__dirname, 'chat_history.json');
 const SETTINGS_PATH = path.join(__dirname, 'pluto_settings.json');
+const MEMORY_PATH = path.join(__dirname, 'memory.json');
 
 function createWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -135,6 +136,20 @@ ipcMain.handle('load-history', async () => {
 
 ipcMain.handle('save-history', async (_e, h) => {
   try { fs.writeFileSync(HISTORY_PATH, JSON.stringify(h, null, 2), 'utf-8'); return true; }
+  catch (e) { return false; }
+});
+
+// ── Memory IPC ────────────────────────────────────────────────────────────
+ipcMain.handle('load-memory', async () => {
+  try {
+    if (fs.existsSync(MEMORY_PATH))
+      return JSON.parse(fs.readFileSync(MEMORY_PATH, 'utf-8'));
+  } catch (e) { /* ignore */ }
+  return [];
+});
+
+ipcMain.handle('save-memory', async (_e, m) => {
+  try { fs.writeFileSync(MEMORY_PATH, JSON.stringify(m, null, 2), 'utf-8'); return true; }
   catch (e) { return false; }
 });
 
