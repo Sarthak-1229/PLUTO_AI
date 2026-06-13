@@ -37,6 +37,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // DuckDuckGo Search API
   searchDuckDuckGo: (query) => ipcRenderer.invoke('search-duckduckgo', query),
 
+  // File System reading
+  readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
+
+  // Keyboard automation / writing
+  typeText: (text) => ipcRenderer.invoke('type-text', text),
+
   // Ollama Vision API (with image)
   chatOllamaVision: async (messages, model, base64Image) => {
     try {

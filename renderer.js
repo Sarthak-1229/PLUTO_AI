@@ -584,8 +584,20 @@ async function processInput(text) {
   let result;
 
   // ── Command detection ──────────────────────────────────────────────
+  // TYPE / WRITE command
+  if (t.match(/\b(type|write|insert|keyboard)\b/)) {
+    showStatus('✍️ Pluto is typing...', 'st-think');
+    showMsgTyping("Pluto is typing into your active window... ⌨️");
+    result = await handleTypeCommand(text);
+  }
+  // FILE READING command
+  else if (t.match(/\b(read file|open file|summarize file|explain file)\b/)) {
+    showStatus('📖 Reading file...', 'st-think');
+    showMsgTyping("Pluto is reading local file... 📂");
+    result = await handleReadFileCommand(text);
+  }
   // SCREEN LOOK command
-  if (t.match(/\b(look at|see|screen|what's on|what do you see|read my|check my|look at my|show me what|what am i doing)\b/)) {
+  else if (t.match(/\b(look at|see|screen|what's on|what do you see|read my|check my|look at my|show me what|what am i doing)\b/)) {
     showStatus('👁️ Scanning your screen...', 'st-think');
     showMsgTyping('Analyzing screen... 👁️');
     result = await lookAtScreen(text);
@@ -680,6 +692,77 @@ async function essayOutline(topic) {
   );
   return r;
 }
+
+async function handleTypeCommand(userQuery) {
+  // Matches text inside quotes like "type 'hello world'" or after a colon like "type: hello"
+  const directMatch = userQuery.match(/\b(?:type|write|insert)\s+['"“](.*?)['"”]/i) || 
+                      userQuery.match(/\b(?:type|write|insert)\s*:\s*(.*)/i);
+  
+  let textToType = '';
+  if (directMatch) {
+    textToType = directMatch[1].trim();
+  } else {
+    // Generate text via LLM
+    const cleanedPrompt = userQuery.replace(/\b(type|write|insert|keyboard|for me|on my screen)\b/gi, '').trim();
+    showMsgTyping("Pluto is drafting the text... ✍️");
+    const generated = await callOllama(
+      `You are writing text that will be typed directly into the user's active document or text field. Generate the text based on this request: "${cleanedPrompt}". Do not include any headers, descriptions, quotes, or conversational phrases. ONLY write the exact text to type.`,
+      cleanedPrompt
+    );
+    if (generated) textToType = generated.trim();
+  }
+
+  if (!textToType) {
+    return "❌ I couldn't find any text to type, buddy!";
+  }
+
+  // Warn the user to position their cursor
+  showMsg("Typing in 3 seconds... Click inside your text area, buddy!");
+  if (voiceEnabled) speakText("Click inside your text area now! I will type in 3 seconds.");
+  
+  // Wait 3 seconds
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
+  showStatus('✍️ Typing...', 'st-think');
+  const typeRes = await api.typeText(textToType);
+  if (typeRes.ok) {
+    return `Typed: "${textToType.substring(0, 30)}..."! Done, buddy!`;
+  } else {
+    return `❌ Typing failed: ${typeRes.error}`;
+  }
+}
+
+async function handleReadFileCommand(userQuery) {
+  // Extract path (e.g. read file C:\test.txt)
+  const pathMatch = userQuery.match(/(?:read|open|summarize|explain)\s+file\s*[:\s]\s*['"“]?(.*?)['"”]?$/i) ||
+                    userQuery.match(/(?:read|open|summarize|explain)\s+['"“]?(c:\\[^\s'"]+)['"”]?/i);
+                    
+  if (!pathMatch) {
+    return "❌ Please specify a valid file path, buddy! E.g. 'read file C:\\path\\to\\file.txt'";
+  }
+
+  const filePath = pathMatch[1].trim();
+  showMsgTyping(`Pluto is opening: ${filePath}... 📂`);
+
+  const fileRes = await api.readFile(filePath);
+  if (!fileRes.ok) {
+    return `❌ Could not read file: ${fileRes.error}`;
+  }
+
+  showMsgTyping("Pluto is reading and analyzing... 🧠");
+  const cleanedPrompt = userQuery.replace(pathMatch[0], '').trim();
+  const instruction = cleanedPrompt || "Summarize the key contents of this file.";
+
+  const r = await callOllama(
+    `You are analyzing a local file's content. Read it carefully and answer the user's instruction: "${instruction}".\n` +
+    `File Contents:\n${fileRes.content}\n\n` +
+    `Keep your response short, direct, and conversational (max 2 sentences, under 30 words).`,
+    filePath
+  );
+
+  return r;
+}
+
 
 function getStudyTips(subject) {
   return `📖 STUDY TIPS FOR: ${subject.toUpperCase()}\n\n` +

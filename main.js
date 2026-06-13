@@ -339,3 +339,43 @@ ipcMain.handle('transcribe-audio', async (_event, pcmData) => {
     return { ok: false, error: err.message };
   }
 });
+
+// ── Writing Automation IPC ────────────────────────────────────────────────
+ipcMain.handle('type-text', async (_event, text) => {
+  return new Promise((resolve) => {
+    const { exec } = require('child_process');
+    // Escape special characters for SendKeys: +, ^, %, ~, (, ), {, }
+    const escaped = text.replace(/([+^%~(){}[\]])/g, '{$1}')
+                        .replace(/\n/g, '{ENTER}');
+
+    const psScript = `[void][System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); [System.Windows.Forms.SendKeys]::SendWait('${escaped.replace(/'/g, "''")}');`;
+
+    exec(`powershell -Command "${psScript}"`, (error) => {
+      if (error) {
+        console.error('Type text error:', error);
+        resolve({ ok: false, error: error.message });
+      } else {
+        resolve({ ok: true });
+      }
+    });
+  });
+});
+
+// ── File Reading IPC ──────────────────────────────────────────────────────
+ipcMain.handle('read-file', async (_event, filePath) => {
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      if (stats.size > 1024 * 1024) { // 1MB limit
+        return { ok: false, error: 'File is too large (max 1MB)' };
+      }
+      const content = fs.readFileSync(filePath, 'utf-8');
+      return { ok: true, content };
+    }
+    return { ok: false, error: 'File not found' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
