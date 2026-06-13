@@ -1,0 +1,16 @@
+{
+  "name": "pluto-cyber-pet",
+  "version": "1.0.0",
+  "description": "Transparent Electron desktop pet Pluto",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "sharp": "^0.35.1"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0"
+  }
+}

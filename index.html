@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Pluto AI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Status bubble (Listening.../Thinking.../Speaking...) -->
+  <div id="status-bubble" class="interactive">...</div>
+
+  <!-- Pet zone (draggable) -->
+  <div id="pet-zone" class="interactive anim-idle">
+    <div class="listen-ring"></div>
+    <div class="listen-ring r2"></div>
+    <div id="neon-ring"></div>
+    <div id="glow-disk"></div>
+    <img id="pluto-avatar" src="assets/pluto-idle.png" alt="Pluto" draggable="false">
+    <div id="mic-badge">🎙️</div>
+    <div id="vi-dot"></div>
+  </div>
+
+  <!-- Stats bar -->
+  <div id="stats-bar" class="interactive">
+    <div class="stat">
+      <div class="stat-head"><span class="stat-icon">🍕</span>Hunger<span id="h-num" class="stat-num">7/10</span></div>
+      <div class="bar-track"><div id="h-bar" class="bar-fill lvl-high" style="width:70%"></div></div>
+    </div>
+    <div class="stat">
+      <div class="stat-head"><span class="stat-icon">😊</span>Happy<span id="hp-num" class="stat-num">8/10</span></div>
+      <div class="bar-track"><div id="hp-bar" class="bar-fill lvl-high" style="width:80%"></div></div>
+    </div>
+    <div class="stat">
+      <div class="stat-head"><span class="stat-icon">⚡</span>Energy<span id="e-num" class="stat-num">6/10</span></div>
+      <div class="bar-track"><div id="e-bar" class="bar-fill lvl-mid" style="width:60%"></div></div>
+    </div>
+  </div>
+
+  <!-- Message bubble -->
+  <div id="msg-area" class="interactive">
+    <div id="msg-label">🤖 Pluto</div>
+    <div id="msg-text">Systems online. Pluto is ready to assist, buddy! 🛸 Double-click me to voice chat, or right-click for options!</div>
+  </div>
+
+  <!-- Context menu -->
+  <div id="ctx-menu" class="interactive">
+    <div class="ctx-item" data-a="feed">🍕 Feed</div>
+    <div class="ctx-item" data-a="play">🚀 Play</div>
+    <div class="ctx-item" data-a="sleep">😴 Sleep</div>
+    <div class="ctx-div"></div>
+    <div class="ctx-item" data-a="voice">🎙️ Voice Chat</div>
+    <div class="ctx-item" data-a="text">⌨️ Type Chat</div>
+    <div class="ctx-div"></div>
+    <div class="ctx-item" data-a="settings">⚙️ Settings</div>
+    <div class="ctx-item" data-a="close" style="color:#ff1744">❌ Close</div>
+  </div>
+
+  <!-- Settings panel -->
+  <div id="settings-panel" class="interactive">
+    <div class="set-title">⚙️ Pluto Settings</div>
+    <div class="set-row">
+      <div class="set-label"><span>Voice Output</span><span class="set-sub">Pluto speaks responses</span></div>
+      <label class="tgl"><input type="checkbox" id="opt-voice" checked><span class="tgl-s"></span></label>
+    </div>
+    <div class="set-row">
+      <div class="set-label"><span>Volume</span><span class="set-sub">Speech volume level</span></div>
+      <input type="range" id="opt-vol" class="set-range" min="0" max="100" value="90">
+    </div>
+    <div class="set-row">
+      <div class="set-label"><span>ElevenLabs API Key</span><span class="set-sub">For human-like voice (optional)</span></div>
+      <input type="password" id="opt-el-key" class="chat-in" placeholder="sk-..." style="width:160px;font-size:11px;">
+    </div>
+    <div class="set-row">
+      <div class="set-label"><span>ElevenLabs Voice</span><span class="set-sub">Voice ID or name</span></div>
+      <select id="opt-el-voice" class="set-select">
+        <option value="21m00Tcm4TlvDq8ikWAM">Rachel (calm)</option>
+        <option value="EXAVITQu4vr4xnSDxMaL">Bella (warm)</option>
+        <option value="MF3mGyEYCl7XYWbV9V6O">Emily (young)</option>
+        <option value="jBpfuIE2acCO8z3wKNLl">Gigi (playful)</option>
+        <option value="pNInz6obpgDQGcFmaJgB">Adam (deep)</option>
+      </select>
+    </div>
+    <div class="set-row">
+      <div class="set-label"><span>Ollama Model</span><span class="set-sub">Local LLM brain</span></div>
+      <select id="opt-model" class="set-select">
+        <option value="llama3.2">llama3.2</option>
+        <option value="phi3.5">phi3.5</option>
+        <option value="mistral">mistral</option>
+        <option value="gemma2">gemma2</option>
+      </select>
+    </div>
+    <div class="set-row">
+      <div class="set-label"><span>Vision Model</span><span class="set-sub">For screen reading</span></div>
+      <select id="opt-vision-model" class="set-select">
+        <option value="llava">llava</option>
+        <option value="llava-llama3">llava-llama3</option>
+        <option value="moondream">moondream</option>
+        <option value="bakllava">bakllava</option>
+      </select>
+    </div>
+    <div class="set-row">
+      <div class="set-label"><span>Clear History</span><span class="set-sub">Erase chat memory</span></div>
+      <button class="set-btn" id="opt-clear" style="border-color:#ff1744;color:#ff1744">CLEAR</button>
+    </div>
+    <div class="set-row">
+      <div class="set-label"><span>Reset Stats</span><span class="set-sub">Back to defaults</span></div>
+      <button class="set-btn" id="opt-reset" style="border-color:#ffb700;color:#ffb700">RESET</button>
+    </div>
+    <button class="set-close" id="opt-close">CLOSE</button>
+  </div>
+
+  <!-- Chat input box -->
+  <div id="chat-box" class="interactive">
+    <form class="chat-row" id="chat-form">
+      <input type="text" id="chat-in" class="chat-in" placeholder="Ask Pluto anything... (solve, explain, code, essay, study tips)" autocomplete="off">
+      <button type="submit" class="chat-send">SEND</button>
+    </form>
+  </div>
+
+</div>
+<script src="renderer.js"></script>
+</body>
+</html>
