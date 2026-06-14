@@ -19,7 +19,7 @@ let statusTimer = null;
 let shouldKeepListening = false;
 let currentAudio = null;
 
-const BASE_PROMPT = `You are Pluto, a sleek, cute desktop AI assistant like Jarvis. Be smart, conversational, and helpful. Call the user 'buddy'. Talk directly and naturally, like a voice assistant (ChatGPT Live/Gemini Live). DO NOT use headers, bullet points, asterisks for actions, or emoji icons. Your answers MUST be extremely short and precise (1 sentence, maximum 20 words). Speak directly to what is asked without any fluff. NEVER say you are an AI or have a knowledge cutoff; you have live internet access and know everything happening right now.`;
+const BASE_PROMPT = `You are Pluto, an advanced, highly capable AI assistant like Gemini. You are here to help the user with anything they need. Be detailed, clear, and natural. You can use markdown headers, bullet points, and code blocks if needed. You have live internet access and know everything happening right now. Always act as a smart, conversational, and helpful companion. Call the user 'buddy'. NEVER say you have a knowledge cutoff.`;
 
 function getSysPrompt() {
   let prompt = BASE_PROMPT;
@@ -391,11 +391,13 @@ async function startRecording() {
     audioChunks = [];
 
     // Set up audio analysis for silence detection
-    if (!analyserCtx) analyserCtx = new AudioContext({ sampleRate: 16000 });
-    const source = analyserCtx.createMediaStreamSource(mediaStream);
-    analyser = analyserCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    source.connect(analyser);
+    if (!analyserCtx) {
+      analyserCtx = new AudioContext({ sampleRate: 16000 });
+      const source = analyserCtx.createMediaStreamSource(mediaStream);
+      analyser = analyserCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+    }
 
     // Start recording
     mediaRecorder = new MediaRecorder(mediaStream, {
@@ -601,7 +603,7 @@ async function processInput(text) {
 
   chatHistory.push({ role: 'user', content: text });
 
-  if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
+  if (chatHistory.length > 100) chatHistory = chatHistory.slice(-100);
   api.saveHistory(chatHistory);
 
   // Background memory extraction
@@ -690,9 +692,9 @@ Output ONLY one word: SEARCH, CODE, or CHAT.`;
       showStatus('💻 Pluto is analyzing...', 'st-think');
       showMsgTyping("Pluto is working on it... 🧠");
       result = await callGroq(
-        `You are Pluto, a brilliant coding and study assistant. Answer the user's question directly and precisely. Keep your response under 3 sentences. Be conversational and call the user 'buddy'.\n\nLONG-TERM MEMORY:\n${memoryBank.length ? '- ' + memoryBank.join('\n- ') : 'None'}`,
+        `You are Pluto, a brilliant coding, study, and general AI assistant. Answer the user's question directly and comprehensively. Provide clear explanations and code if needed. Be conversational and call the user 'buddy'.\n\nLONG-TERM MEMORY:\n${memoryBank.length ? '- ' + memoryBank.join('\n- ') : 'None'}`,
         text,
-        'meta-llama/llama-4-scout-17b-16e-instruct'
+        'llama-3.1-8b-instant'
       );
     } else {
       result = await normalChat(text);
@@ -731,7 +733,7 @@ async function solveMath(problem) {
   const r = await callGroq(
     `Solve this math problem. State the final answer clearly and directly in one short sentence (under 15 words). Problem: ${problem}`,
     problem,
-    'meta-llama/llama-4-scout-17b-16e-instruct'
+    'llama-3.1-8b-instant'
   );
   return r;
 }
@@ -740,7 +742,7 @@ async function explainConcept(topic) {
   const r = await callGroq(
     `Explain this concept in one short sentence (under 20 words). Topic: ${topic}`,
     topic,
-    'meta-llama/llama-4-scout-17b-16e-instruct'
+    'llama-3.1-8b-instant'
   );
   return r;
 }
@@ -749,7 +751,7 @@ async function helpWithCode(codeProblem) {
   const r = await callGroq(
     `Explain how to fix this code bug in one short sentence (under 20 words). Problem: ${codeProblem}`,
     codeProblem,
-    'meta-llama/llama-4-scout-17b-16e-instruct'
+    'llama-3.1-8b-instant'
   );
   return r;
 }
@@ -758,7 +760,7 @@ async function essayOutline(topic) {
   const r = await callGroq(
     `Give a 3-bullet point outline for this topic. Keep each bullet under 5 words. Topic: ${topic}`,
     topic,
-    'meta-llama/llama-4-scout-17b-16e-instruct'
+    'llama-3.1-8b-instant'
   );
   return r;
 }
@@ -778,7 +780,7 @@ async function handleTypeCommand(userQuery) {
     const generated = await callGroq(
       `You are writing text that will be typed directly into the user's active document or text field. Generate the text based on this request: "${cleanedPrompt}". Do not include any headers, descriptions, quotes, or conversational phrases. ONLY write the exact text to type.`,
       cleanedPrompt,
-      'meta-llama/llama-4-scout-17b-16e-instruct'
+      'llama-3.1-8b-instant'
     );
     if (generated) textToType = generated.trim();
   }
@@ -829,7 +831,7 @@ async function handleReadFileCommand(userQuery) {
     `File Contents:\n${fileRes.content}\n\n` +
     `Keep your response short, direct, and conversational (max 2 sentences, under 30 words).`,
     filePath,
-    'meta-llama/llama-4-scout-17b-16e-instruct'
+    'llama-3.1-8b-instant'
   );
 
   return r;
@@ -866,8 +868,7 @@ ${webData}
 
 INSTRUCTIONS:
 - Answer the user's question using ONLY the search results above.
-- Be direct, factual, and conversational. Call the user 'buddy'.
-- Keep it short (1-3 sentences, under 50 words).
+- Be direct, factual, and helpful. Provide detailed explanations if needed. Call the user 'buddy'.
 - NEVER say you don't have access to real-time data. You DO.
 
 LONG-TERM MEMORY:
@@ -877,7 +878,7 @@ ${memoryBank.length ? '- ' + memoryBank.join('\n- ') : 'None'}`;
         { role: 'system', content: systemPrompt },
         { role: 'user', content: query }
       ];
-      const r = await api.chatGroq(msgs, 'openai/gpt-oss-120b', groqKey);
+      const r = await api.chatGroq(msgs, 'llama-3.1-8b-instant', groqKey);
       if (r.ok) return r.text.trim();
     }
   } catch (err) {
@@ -886,10 +887,10 @@ ${memoryBank.length ? '- ' + memoryBank.join('\n- ') : 'None'}`;
 
   // Fallback if search fails
   const msgsFallback = [
-    { role: 'system', content: `You are Pluto. The user asked: "${query}". The web search failed. Answer with what you know, but keep it short (under 50 words). Be honest if you're unsure. Call the user 'buddy'.\n\nMEMORY:\n${memoryBank.join('\n')}` },
+    { role: 'system', content: `You are Pluto. The user asked: "${query}". The web search failed. Answer with what you know in detail. Be honest if you're unsure. Call the user 'buddy'.\n\nMEMORY:\n${memoryBank.join('\n')}` },
     { role: 'user', content: query }
   ];
-  const rFallback = await api.chatGroq(msgsFallback, 'openai/gpt-oss-120b', groqKey);
+  const rFallback = await api.chatGroq(msgsFallback, 'llama-3.1-8b-instant', groqKey);
   if (rFallback.ok) return rFallback.text.trim();
   showGroqError();
   return null;
@@ -898,8 +899,8 @@ ${memoryBank.length ? '- ' + memoryBank.join('\n- ') : 'None'}`;
 async function normalChat(text) {
   const mood = getMoodLine();
   const msgs = [
-    { role: 'system', content: SYS_PROMPT + `\n\nCurrent stats: Hunger=${~~hunger}/10, Happiness=${~~happiness}/10, Energy=${~~energy}/10. ${mood} Keep this response to exactly 1 short sentence (under 20 words).` },
-    ...chatHistory.slice(-10)
+    { role: 'system', content: getSysPrompt() + `\n\nCurrent stats: Hunger=${~~hunger}/10, Happiness=${~~happiness}/10, Energy=${~~energy}/10. ${mood} Provide a helpful, detailed, and clear response.` },
+    ...chatHistory
   ];
   const r = await api.chatGroq(msgs, 'llama-3.1-8b-instant', groqKey);
   if (r.ok) return r.text.trim();
